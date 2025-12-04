@@ -1,507 +1,113 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
-    <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-        <title>Duel de Tanks - Multijoueur (JS)</title>
-        <style>
-            html,body{height:100%;margin:0;background:#111;color:#fff;font-family:Arial,Helvetica,sans-serif}
-            #gameCanvas{display:block;background:#222;width:100vw;height:100vh}
-            #uiOverlay{position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none}
-            .menu{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.75);padding:20px;border-radius:10px;pointer-events:auto;width:320px}
-            .menu h1{margin:0 0 10px 0;font-size:22px}
-            .menu button{display:block;width:100%;padding:10px;margin-top:8px;font-size:16px}
-            .small{font-size:13px;color:#ccc;margin-top:8px}
-        </style>
-    </head>
-    <body>
-        <canvas id="gameCanvas"></canvas>
-        <div id="uiOverlay">
-            <div id="menu" class="menu">
-                <h1>Duel de Tanks</h1>
-                <div class="small">Joueurs : 2 ou 3 manettes. Stick gauche = déplacer, stick droit = viser, bouton A/Cross = tirer.</div>
-                <div style="margin-top:10px">Nombre de joueurs :</div>
-                <select id="playerCount" style="width:100%;padding:8px;margin-top:6px">
-                    <option value="2">2 joueurs</option>
-                    <option value="3">3 joueurs</option>
-                </select>
-                <label style="margin-top:10px;display:block">Nombre d'obstacles : <input id="obCount" type="number" min="0" max="12" value="6" style="width:60px;margin-left:10px"></label>
-                <button id="startBtn">Démarrer la partie</button>
-                <button id="instructionsBtn">Instructions / Contrôles</button>
-                <div id="instructions" class="small" style="display:none;margin-top:10px">
-                    <strong>Contrôles manette :</strong><br>
-                    Stick gauche : déplacement<br>
-                    Stick droit : visée (rotation canon à 360°)<br>
-                    Bouton A/Cross (buttons[0]) : tirer (cooldown 300ms)<br>
-                    Connecte tes manettes et choisis 2 ou 3 joueurs puis clique Démarrer.
-                </div>
-            </div>
-        </div>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Duel 2 Joueurs</title>
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #111;
+        color: #fff;
+        font-family: Arial, sans-serif;
+    }
+    canvas {
+        display: block;
+        background: #222;
+        margin: 0 auto;
+    }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const playerSize = 40;
+const speed = 5;
+const bulletSpeed = 7;
+
+let players = [
+    {x: 100, y: 300, color: 'red', up: 'w', down: 's', left: 'a', right: 'd', shoot: ' ', bullets: [], score: 0},
+    {x: 660, y: 300, color: 'blue', up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', shoot: 'Enter', bullets: [], score: 0}
+];
+
+let keysPressed = {};
+
+document.addEventListener('keydown', e => keysPressed[e.key] = true);
+document.addEventListener('keyup', e => keysPressed[e.key] = false);
+
+function update() {
+    players.forEach(player => {
+        if (keysPressed[player.up] && player.y > 0) player.y -= speed;
+        if (keysPressed[player.down] && player.y < canvas.height - playerSize) player.y += speed;
+        if (keysPressed[player.left] && player.x > 0) player.x -= speed;
+        if (keysPressed[player.right] && player.x < canvas.width - playerSize) player.x += speed;
+        if (keysPressed[player.shoot]) shoot(player);
         
-        <script>
-            // ---------- Canvas setup ----------
-            const canvas = document.getElementById('gameCanvas');
-            const ctx = canvas.getContext('2d');
-            function resize(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
-            window.addEventListener('resize', resize);
-            resize();
+        player.bullets.forEach((bullet, index) => {
+            bullet.x += bullet.dx;
+            bullet.y += bullet.dy;
             
-            // ---------- Audio (WebAudio synth sounds) ----------
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            const audioCtx = new AudioCtx();
-            
-            function playShootSound(freq=800, duration=0.08){
-                const o = audioCtx.createOscillator();
-                const g = audioCtx.createGain();
-                o.type = 'sawtooth';
-                o.frequency.value = freq;
-                g.gain.value = 0.08;
-                o.connect(g); g.connect(audioCtx.destination);
-                o.start();
-                g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
-                o.stop(audioCtx.currentTime + duration + 0.02);
+            // Collision avec l'autre joueur
+            let opponent = players.find(p => p !== player);
+            if (bullet.x < opponent.x + playerSize &&
+                bullet.x + 10 > opponent.x &&
+                bullet.y < opponent.y + playerSize &&
+                bullet.y + 10 > opponent.y) {
+                opponent.x = Math.random() * (canvas.width - playerSize);
+                opponent.y = Math.random() * (canvas.height - playerSize);
+                player.score++;
+                player.bullets.splice(index, 1);
             }
-            function playHitSound(){
-                const o = audioCtx.createOscillator();
-                const g = audioCtx.createGain();
-                o.type = 'square';
-                o.frequency.value = 120;
-                g.gain.value = 0.12;
-                o.connect(g); g.connect(audioCtx.destination);
-                o.start();
-                g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.18);
-                o.stop(audioCtx.currentTime + 0.2);
+
+            // Suppression si hors écran
+            if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+                player.bullets.splice(index, 1);
             }
-            function playWinSound(){
-                const now = audioCtx.currentTime;
-                const o1 = audioCtx.createOscillator(), g1 = audioCtx.createGain();
-                const o2 = audioCtx.createOscillator(), g2 = audioCtx.createGain();
-                o1.type='sine'; o2.type='sine';
-                o1.frequency.value=600; o2.frequency.value=900;
-                g1.gain.value=0.06; g2.gain.value=0.06;
-                o1.connect(g1); o2.connect(g2); g1.connect(audioCtx.destination); g2.connect(audioCtx.destination);
-                o1.start(now); o2.start(now);
-                o1.stop(now+0.28); o2.stop(now+0.28);
-            }
-            
-            // ---------- Utilities ----------
-            function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-            function dist(ax,ay,bx,by){ return Math.hypot(ax-bx, ay-by); }
-            function deg(a){ return a*180/Math.PI; }
-            function rad(a){ return a*Math.PI/180; }
-            const deadzone = 0.18;
-            
-            // ---------- Game state ----------
-            let running = false;
-            let showMenu = true;
-            let lastFrame = performance.now();
-            let players = [];
-            let bullets = [];
-            let obstacles = [];
-            let playerCount = 2;
-            let obCount = 6;
-            let winner = null;
-            
-            // ---------- Tank definitions and drawing (simple sprite-like) ----------
-            const COLORS = ['#2b8fff', '#ff5b5b', '#ffd24d'];
-            class Player {
-                constructor(id, x, y, color){
-                    this.id = id;
-                    this.x = x; this.y = y;
-                    this.color = color;
-                    this.size = 48;
-                    this.hp = 5;
-                    this.angle = 0; // turret angle radians
-                    this.speed = 3.5;
-                    this.cooldown = 0;
-                    this.controllerIndex = null; // assigned at start
-                    this.score = 0;
-                }
-                draw(ctx){
-                    // draw tracks
-                    ctx.save();
-                    ctx.translate(this.x, this.y);
-                    // body
-                    ctx.fillStyle = '#222';
-                    ctx.fillRect(-this.size*0.55, -this.size*0.5, this.size*1.1, this.size*0.9);
-                    // tracks
-                    ctx.fillStyle = this.color;
-                    ctx.fillRect(-this.size*0.6, -this.size*0.5, this.size*0.15, this.size*0.9);
-                    ctx.fillRect(this.size*0.45, -this.size*0.5, this.size*0.15, this.size*0.9);
-                    // body center
-                    ctx.fillStyle = '#333';
-                    ctx.fillRect(-this.size*0.33, -this.size*0.33, this.size*0.66, this.size*0.66);
-                    // turret
-                    ctx.rotate(this.angle);
-                    ctx.fillStyle = this.color;
-                    ctx.beginPath();
-                    ctx.arc(0,0, this.size*0.28, 0, Math.PI*2);
-                    ctx.fill();
-                    ctx.fillRect(0, -this.size*0.06, this.size*0.7, this.size*0.12);
-                    ctx.restore();
-                    
-                    // hp
-                    ctx.fillStyle = '#0008';
-                    ctx.fillRect(this.x - 36, this.y - this.size*0.9 - 12, 72, 10);
-                    ctx.fillStyle = '#0f0';
-                    ctx.fillRect(this.x - 36, this.y - this.size*0.9 - 12, 72 * (this.hp/5), 10);
-                    // id
-                    ctx.fillStyle = 'white';
-                    ctx.font = '12px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('J' + (this.id+1), this.x, this.y + this.size*0.9 + 12);
-                }
-            }
-            
-            // ---------- Obstacles ----------
-            function createObstacles(count){
-                obstacles = [];
-                const margin = 80;
-                for(let i=0;i<count;i++){
-                    const w = 80 + Math.random()*140;
-                    const h = 40 + Math.random()*120;
-                    const x = margin + Math.random()*(canvas.width - margin*2 - w);
-                    const y = margin + Math.random()*(canvas.height - margin*2 - h);
-                    // ensure not overlapping starting zones roughly:
-                    obstacles.push({x,y,w,h});
-                }
-            }
-            function drawObstacles(ctx){
-                ctx.fillStyle = '#555';
-                for(const o of obstacles){
-                    ctx.fillRect(o.x, o.y, o.w, o.h);
-                    // border
-                    ctx.strokeStyle = '#666';
-                    ctx.strokeRect(o.x, o.y, o.w, o.h);
-                }
-            }
-            
-            // ---------- Bullets ----------
-            class Bullet {
-                constructor(x,y,dx,dy,owner){
-                    this.x = x; this.y = y; this.dx = dx; this.dy = dy; this.speed = 9; this.size = 10; this.owner = owner;
-                    this.life = 3000; this.spawn = performance.now();
-                }
-                update(dt){
-                    this.x += this.dx * this.speed;
-                    this.y += this.dy * this.speed;
-                }
-                draw(ctx){
-                    ctx.fillStyle = '#ffd24d';
-                    ctx.beginPath();
-                    ctx.arc(this.x, this.y, this.size*0.45, 0, Math.PI*2);
-                    ctx.fill();
-                }
-            }
-            
-            // ---------- Collisions ----------
-            function rectIntersectsRect(a,b){
-                return !(a.x + a.w < b.x || a.x > b.x + b.w || a.y + a.h < b.y || a.y > b.y + b.h);
-            }
-            function circleRectCollision(cx,cy,r, rect){
-                // closest point
-                const closestX = clamp(cx, rect.x, rect.x + rect.w);
-                const closestY = clamp(cy, rect.y, rect.y + rect.h);
-                const d = dist(cx,cy,closestX,closestY);
-                return d <= r;
-            }
-            
-            // ---------- Game logic ----------
-            function resetGame(){
-                players = [];
-                bullets = [];
-                winner = null;
-                const margin = 120;
-                const positions = [
-                {x: margin, y: canvas.height/2},
-                {x: canvas.width - margin, y: canvas.height/2},
-                {x: canvas.width/2, y: margin}
-                ];
-                for(let i=0;i<playerCount;i++){
-                    const p = new Player(i, positions[i].x, positions[i].y, COLORS[i%COLORS.length]);
-                    players.push(p);
-                }
-                createObstacles(obCount);
-                assignControllersToPlayers();
-            }
-            
-            function assignControllersToPlayers(){
-                const g = navigator.getGamepads();
-                // assign first connected controllers to players in order
-                let assigned = 0;
-                for(let i=0;i<g.length && assigned < playerCount; i++){
-                    const gp = g[i];
-                    if(!gp) continue;
-                    // only assign if it's connected
-                    if(gp.connected){
-                        players[assigned].controllerIndex = i;
-                        assigned++;
-                    }
-                }
-                // unassigned players keep null -> keyboard fallback possible
-            }
-            
-            // handle movement and firing
-            function processInput(dt){
-                const g = navigator.getGamepads();
-                
-                players.forEach((p,idx) => {
-                    // default no input
-                    let lx=0, ly=0, rx=0, ry=0, fire=false;
-                    if(p.controllerIndex !== null && g[p.controllerIndex]){
-                        const gp = g[p.controllerIndex];
-                        lx = gp.axes[0] ?? 0;
-                        ly = gp.axes[1] ?? 0;
-                        rx = gp.axes[2] ?? 0;
-                        ry = gp.axes[3] ?? 0;
-                        fire = gp.buttons[0]?.pressed;
-                    } else {
-                        // keyboard fallback for player 0 (use WASD + mouse+click)
-                        if(p.id===0){
-                            // simple WASD
-                            if(keyState['KeyW']) ly = -1;
-                            if(keyState['KeyS']) ly = 1;
-                            if(keyState['KeyA']) lx = -1;
-                            if(keyState['KeyD']) lx = 1;
-                            // aim with mouse position if moved
-                            if(mousePos.x !== null){
-                                const ax = mousePos.x - p.x, ay = mousePos.y - p.y;
-                                rx = Math.cos(Math.atan2(ay,ax));
-                                ry = Math.sin(Math.atan2(ay,ax));
-                            }
-                            if(mouseDown) fire = true;
-                        }
-                        // keyboard fallback for player 1 (arrow keys)
-                        if(p.id===1){
-                            if(keyState['ArrowUp']) ly = -1;
-                            if(keyState['ArrowDown']) ly = 1;
-                            if(keyState['ArrowLeft']) lx = -1;
-                            if(keyState['ArrowRight']) lx = 1;
-                            // no aim fallback
-                        }
-                    }
-                    
-                    // apply deadzone smoothing
-                    if(Math.abs(lx) < deadzone) lx = 0;
-                    if(Math.abs(ly) < deadzone) ly = 0;
-                    if(Math.abs(rx) < deadzone) rx = 0;
-                    if(Math.abs(ry) < deadzone) ry = 0;
-                    
-                    // movement (normalize diagonal)
-                    const len = Math.hypot(lx,ly);
-                    if(len > 0){
-                        const nx = lx/len, ny = ly/len;
-                        const speed = p.speed;
-                        const nextX = p.x + nx * speed;
-                        const nextY = p.y + ny * speed;
-                        // check collisions with obstacles and screen bounds and other tanks
-                        let canMove=true;
-                        const testRect = {x: nextX - p.size*0.5, y: nextY - p.size*0.5, w: p.size, h: p.size};
-                        // bounds
-                        if(testRect.x < 6 || testRect.y < 6 || testRect.x + testRect.w > canvas.width-6 || testRect.y + testRect.h > canvas.height-6){
-                            canMove = false;
-                        }
-                        for(const o of obstacles){ if(rectIntersectsRect(testRect, {x:o.x,y:o.y,w:o.w,h:o.h})){ canMove=false; break; } }
-                        // avoid overlapping tanks
-                        for(const other of players){
-                            if(other === p) continue;
-                            const otherRect = {x: other.x - other.size*0.5, y: other.y - other.size*0.5, w: other.size, h: other.size};
-                            if(rectIntersectsRect(testRect, otherRect)){ canMove=false; break; }
-                        }
-                        if(canMove){ p.x = nextX; p.y = nextY; }
-                    }
-                    
-                    // aiming: prefer right stick if present, else keep previous angle or fallback to left stick direction
-                    if(Math.hypot(rx,ry) > 0){
-                        p.angle = Math.atan2(ry, rx);
-                    } else if(Math.hypot(lx,ly) > 0){
-                        // optional: face movement direction if no right stick
-                        p.angle = Math.atan2(ly, lx);
-                    }
-                    
-                    // shooting (cooldown)
-                    if(p.cooldown > 0) p.cooldown -= dt;
-                    if(fire && p.cooldown <= 0){
-                        // create bullet at turret tip
-                        const muzzle = 28;
-                        const bx = p.x + Math.cos(p.angle)*muzzle;
-                        const by = p.y + Math.sin(p.angle)*muzzle;
-                        bullets.push(new Bullet(bx, by, Math.cos(p.angle), Math.sin(p.angle), p));
-                        p.cooldown = 300; // ms
-                        playShootSound(700 + p.id*120, 0.09);
-                    }
-                });
-            }
-            
-            // ---------- Update loop ----------
-            function update(now){
-                if(!running) return;
-                const dt = now - lastFrame;
-                lastFrame = now;
-                
-                processInput(dt);
-                
-                // update bullets
-                for(let i=bullets.length-1;i>=0;i--){
-                    const b = bullets[i];
-                    b.update(dt);
-                    // lifetime and bounds
-                    if(b.x < -20 || b.x > canvas.width+20 || b.y < -20 || b.y > canvas.height+20 || (now - b.spawn) > b.life){
-                        bullets.splice(i,1);
-                        continue;
-                    }
-                    // collision with obstacles
-                    let hitObstacle = false;
-                    for(const o of obstacles){
-                        if(circleRectCollision(b.x,b.y,b.size, o)){
-                            bullets.splice(i,1);
-                            hitObstacle = true;
-                            break;
-                        }
-                    }
-                    if(hitObstacle) continue;
-                    // collision with players (not owner)
-                    for(const p of players){
-                        if(p === b.owner) continue;
-                        if(dist(b.x,b.y,p.x,p.y) < p.size*0.55){
-                            // hit
-                            p.hp -= 1;
-                            playHitSound();
-                            bullets.splice(i,1);
-                            if(p.hp <= 0){
-                                // mark eliminated
-                                p.hp = 0;
-                                // check remaining players alive
-                                const alive = players.filter(pp => pp.hp > 0);
-                                if(alive.length === 1){
-                                    winner = alive[0];
-                                    running = false;
-                                    playWinSound();
-                                    setTimeout(()=> showEndMenu(winner), 300);
-                                }
-                            }
-                            break;
-                        }
-                    }
-                }
-                
-                // draw
-                draw();
-                
-                if(running) requestAnimationFrame(update);
-            }
-            
-            // ---------- Drawing ----------
-            function draw(){
-                // background
-                ctx.fillStyle = '#111';
-                ctx.fillRect(0,0,canvas.width,canvas.height);
-                
-                // arena border
-                ctx.strokeStyle = '#444';
-                ctx.lineWidth = 4;
-                ctx.strokeRect(8,8,canvas.width-16,canvas.height-16);
-                
-                // obstacles
-                drawObstacles(ctx);
-                
-                // bullets
-                for(const b of bullets) b.draw(ctx);
-                
-                // players (draw alive last so they are on top)
-                for(const p of players) p.draw(ctx);
-                
-                // HUD top-left
-                ctx.fillStyle = 'white';
-                ctx.font = '16px Arial';
-                let x=12, y=24;
-                for(const p of players){
-                    ctx.fillStyle = p.color;
-                    ctx.fillText(`J${p.id+1} : ${p.hp} PV`, x, y);
-                    y += 20;
-                }
-                
-                // show winner overlay if exists
-                if(winner){
-                    ctx.save();
-                    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                    ctx.fillRect(0,0,canvas.width,canvas.height);
-                    ctx.fillStyle = 'white';
-                    ctx.textAlign = 'center';
-                    ctx.font = '44px Arial';
-                    ctx.fillText(`Joueur ${winner.id+1} a gagné !`, canvas.width/2, canvas.height/2 - 10);
-                    ctx.font = '20px Arial';
-                    ctx.fillText('Clique sur Rejouer dans le menu', canvas.width/2, canvas.height/2 + 30);
-                    ctx.restore();
-                }
-            }
-            
-            // ---------- Menu / UI interactions ----------
-            const menuDiv = document.getElementById('menu');
-            const startBtn = document.getElementById('startBtn');
-            const playerCountSelect = document.getElementById('playerCount');
-            const obInput = document.getElementById('obCount');
-            const instrBtn = document.getElementById('instructionsBtn');
-            const instr = document.getElementById('instructions');
-            
-            instrBtn.addEventListener('click', ()=>{ instr.style.display = instr.style.display === 'none' ? 'block' : 'none'; });
-            
-            startBtn.addEventListener('click', ()=>{
-                // resume audio context on user gesture
-                if(audioCtx.state === 'suspended') audioCtx.resume();
-                playerCount = parseInt(playerCountSelect.value);
-                obCount = parseInt(obInput.value) || 6;
-                showMenu = false;
-                menuDiv.style.display = 'none';
-                resetGame();
-                running = true;
-                lastFrame = performance.now();
-                requestAnimationFrame(update);
-            });
-            
-            // show end menu
-            function showEndMenu(winner){
-                menuDiv.style.display = 'block';
-                menuDiv.querySelector('h1').textContent = `Joueur ${winner.id+1} gagne !`;
-                startBtn.textContent = 'Rejouer';
-                menuDiv.style.pointerEvents = 'auto';
-                showMenu = true;
-            }
-            
-            // ---------- Gamepad connect/disconnect logging & auto-assign ----------
-            window.addEventListener("gamepadconnected",(e)=>{
-                console.log("Gamepad connecté :", e.gamepad.index, e.gamepad.id);
-            });
-            window.addEventListener("gamepaddisconnected",(e)=>{
-                console.log("Gamepad déconnecté :", e.gamepad.index);
-                // reassign on next reset or while running
-                assignControllersToPlayers();
-            });
-            
-            // ---------- Input fallbacks (keyboard + mouse) ----------
-            const keyState = {};
-            window.addEventListener('keydown', e=> keyState[e.code]=true);
-            window.addEventListener('keyup', e=> keyState[e.code]=false);
-            
-            const mousePos = {x:null,y:null};
-            let mouseDown = false;
-            window.addEventListener('mousemove', e=> { mousePos.x = e.clientX; mousePos.y = e.clientY; });
-            window.addEventListener('mousedown', e=> { mouseDown = true; });
-            window.addEventListener('mouseup', e=> { mouseDown = false; });
-            
-            // ---------- Start with menu visible ----------
-            menuDiv.style.display = 'block';
-            
-            // ---------- Useful: show connected controllers in console for debugging ----------
-            setInterval(()=>{
-                const g = navigator.getGamepads();
-                let txt = 'Controllers:';
-                for(let i=0;i<g.length;i++){
-                    if(g[i]) txt += ` [${i}] ${g[i].id.split('(')[0].slice(0,24)}`;
-                }
-                //console.log(txt);
-            }, 4000);
-            
-        </script>
-    </body>
+        });
+    });
+}
+
+function shoot(player) {
+    // Limite de cadence
+    if (!player.canShoot) return;
+    player.bullets.push({x: player.x + playerSize/2 - 5, y: player.y + playerSize/2 - 5, dx: player === players[0] ? bulletSpeed : -bulletSpeed, dy: 0});
+    player.canShoot = false;
+    setTimeout(() => player.canShoot = true, 300);
+}
+
+players.forEach(p => p.canShoot = true);
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    players.forEach(player => {
+        // Joueur
+        ctx.fillStyle = player.color;
+        ctx.fillRect(player.x, player.y, playerSize, playerSize);
+
+        // Balles
+        ctx.fillStyle = 'yellow';
+        player.bullets.forEach(bullet => ctx.fillRect(bullet.x, bullet.y, 10, 10));
+
+        // Score
+        ctx.fillStyle = player.color;
+        ctx.font = '20px Arial';
+        ctx.fillText(`Score: ${player.score}`, player === players[0] ? 10 : canvas.width - 110, 30);
+    });
+}
+
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
 </html>
