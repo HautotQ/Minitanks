@@ -3,77 +3,72 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Duel 2 Joueurs - Touch</title>
+<title>Duel Manettes</title>
 <style>
 body { margin:0; background:#111; color:#fff; font-family:Arial; overflow:hidden;}
 canvas { display:block; margin:0 auto; background:#222; }
-.button { position:absolute; width:50px; height:50px; background:rgba(255,255,255,0.2); text-align:center; line-height:50px; border-radius:10px; user-select:none;}
 </style>
 </head>
 <body>
 <canvas id="gameCanvas" width="800" height="600"></canvas>
-
-<!-- Joueur Rouge -->
-<div id="r-up" class="button" style="left:20px; bottom:120px;">↑</div>
-<div id="r-down" class="button" style="left:20px; bottom:20px;">↓</div>
-<div id="r-left" class="button" style="left:80px; bottom:70px;">←</div>
-<div id="r-right" class="button" style="left:140px; bottom:70px;">→</div>
-<div id="r-shoot" class="button" style="left:200px; bottom:70px;">●</div>
-
-<!-- Joueur Bleu -->
-<div id="b-up" class="button" style="right:200px; bottom:120px;">↑</div>
-<div id="b-down" class="button" style="right:200px; bottom:20px;">↓</div>
-<div id="b-left" class="button" style="right:260px; bottom:70px;">←</div>
-<div id="b-right" class="button" style="right:140px; bottom:70px;">→</div>
-<div id="b-shoot" class="button" style="right:80px; bottom:70px;">●</div>
-
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+
 const playerSize = 40;
 const speed = 5;
 const bulletSpeed = 7;
 
 let players = [
-    {x:100, y:300, color:'red', bullets:[], score:0, dir:{up:false, down:false, left:false, right:false, shoot:false}},
-    {x:660, y:300, color:'blue', bullets:[], score:0, dir:{up:false, down:false, left:false, right:false, shoot:false}}
+    {x:100, y:300, color:'red', bullets:[], score:0},
+    {x:660, y:300, color:'blue', bullets:[], score:0}
 ];
 
 function shoot(player) {
-    if (!player.canShoot) return;
-    player.bullets.push({x: player.x+playerSize/2-5, y: player.y+playerSize/2-5, dx: player===players[0]?bulletSpeed:-bulletSpeed, dy:0});
+    if(!player.canShoot) return;
+    player.bullets.push({x:player.x+playerSize/2-5, y:player.y+playerSize/2-5, dx:player===players[0]?bulletSpeed:-bulletSpeed, dy:0});
     player.canShoot=false;
     setTimeout(()=>player.canShoot=true,300);
 }
+
 players.forEach(p=>p.canShoot=true);
 
 function update() {
-    players.forEach(player => {
-        if(player.dir.up && player.y>0) player.y -= speed;
-        if(player.dir.down && player.y<canvas.height-playerSize) player.y += speed;
-        if(player.dir.left && player.x>0) player.x -= speed;
-        if(player.dir.right && player.x<canvas.width-playerSize) player.x += speed;
-        if(player.dir.shoot) shoot(player);
+    const gamepads = navigator.getGamepads();
+    players.forEach((player,index)=>{
+        const gp = gamepads[index];
+        if(gp){
+            // Axes 0 et 1 : stick gauche X/Y
+            player.x += gp.axes[0]*speed;
+            player.y += gp.axes[1]*speed;
+            // Bouton 0 (souvent A) pour tirer
+            if(gp.buttons[0].pressed) shoot(player);
+        }
 
-        player.bullets.forEach((bullet,index)=>{
-            bullet.x += bullet.dx;
-            bullet.y += bullet.dy;
-            let opponent = players.find(p=>p!==player);
-            if(bullet.x<opponent.x+playerSize && bullet.x+10>opponent.x &&
-               bullet.y<opponent.y+playerSize && bullet.y+10>opponent.y){
+        // Limites du canvas
+        player.x = Math.max(0, Math.min(canvas.width - playerSize, player.x));
+        player.y = Math.max(0, Math.min(canvas.height - playerSize, player.y));
+
+        // Mouvements des balles
+        player.bullets.forEach((b,indexB)=>{
+            b.x += b.dx;
+            b.y += b.dy;
+            const opponent = players.find((p,i)=>i!==index);
+            if(b.x < opponent.x+playerSize && b.x+10 > opponent.x &&
+               b.y < opponent.y+playerSize && b.y+10 > opponent.y){
                 opponent.x=Math.random()*(canvas.width-playerSize);
                 opponent.y=Math.random()*(canvas.height-playerSize);
                 player.score++;
-                player.bullets.splice(index,1);
+                player.bullets.splice(indexB,1);
             }
-            if(bullet.x<0 || bullet.x>canvas.width || bullet.y<0 || bullet.y>canvas.height){
-                player.bullets.splice(index,1);
+            if(b.x<0 || b.x>canvas.width || b.y<0 || b.y>canvas.height){
+                player.bullets.splice(indexB,1);
             }
         });
     });
 }
 
-function draw() {
+function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
     players.forEach(player=>{
         ctx.fillStyle=player.color;
@@ -86,19 +81,17 @@ function draw() {
     });
 }
 
-function gameLoop(){ update(); draw(); requestAnimationFrame(gameLoop);}
-gameLoop();
-
-// Touch controls
-function setupButton(id, playerIndex, action){
-    const btn=document.getElementById(id);
-    btn.addEventListener('touchstart', e=>{players[playerIndex].dir[action]=true; e.preventDefault();});
-    btn.addEventListener('touchend', e=>{players[playerIndex].dir[action]=false; e.preventDefault();});
+function gameLoop(){
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
 }
-['up','down','left','right','shoot'].forEach(a=>{
-    setupButton('r-'+a,0,a);
-    setupButton('b-'+a,1,a);
+
+window.addEventListener("gamepadconnected", (e)=>{
+    console.log("Manette connectée:", e.gamepad);
 });
+
+gameLoop();
 </script>
 </body>
 </html>
